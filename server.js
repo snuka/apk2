@@ -16,6 +16,7 @@ import {
   updateCalendarEvent,
   deleteCalendarEvent,
   checkFreeBusy,
+  checkSchedulingConflict,
   setContextManager
 } from './tools/calendarTools.js';
 
@@ -444,7 +445,7 @@ fastify.register(async function (fastify) {
         // Create RealtimeAgent with dynamic prompt, voice, and calendar tools
         const agent = new RealtimeAgent({
           name: 'AlwaysPickup Assistant',
-          instructions: instruction + '\n\nYou have access to Google Calendar and can help users manage their events. You can create, update, delete, and query calendar events using voice commands.',
+          instructions: instruction + '\n\nYou have access to Google Calendar and can help users manage their events. You can create, update, delete, and query calendar events using voice commands. When checking availability, always use the conflict checking tools to determine if there are scheduling conflicts.',
           voice: voice,
           tools: [
             createCalendarEvent,
@@ -452,7 +453,8 @@ fastify.register(async function (fastify) {
             listCalendarEvents,
             updateCalendarEvent,
             deleteCalendarEvent,
-            checkFreeBusy
+            checkFreeBusy,
+            checkSchedulingConflict
           ]
         });
         fastify.log.info('🤖 RealtimeAgent created with voice:', voice);
@@ -478,19 +480,41 @@ fastify.register(async function (fastify) {
 
         // Handle session events
         session.on('error', (error) => {
-          fastify.log.error('Session error:', error);
+          fastify.log.error('❌ Session error:', error);
         });
 
         // Log conversation events for debugging
         session.on('conversation.item.created', (item) => {
-          fastify.log.info('Conversation item created:', item.type);
+          fastify.log.info('💬 Conversation item created:', item.type);
+          if (item.type === 'function_call') {
+            fastify.log.info('🔧 Function call detected:', item.name, 'with arguments:', item.arguments);
+          }
         });
 
         session.on('response.done', () => {
-          fastify.log.info('AI response completed, waiting for user input...');
+          fastify.log.info('✅ AI response completed, waiting for user input...');
         });
 
-        fastify.log.info('🔊 Session setup completed successfully');
+        // Enhanced tool execution logging
+        session.on('response.output_item.added', (item) => {
+          fastify.log.info('📤 Response output item added:', item.type);
+          if (item.type === 'function_call') {
+            fastify.log.info('🔧 Tool call initiated:', item.name);
+          }
+        });
+
+        session.on('response.function_call_arguments.done', (item) => {
+          fastify.log.info('🔧 Tool call arguments completed:', item.name, 'with args:', item.arguments);
+        });
+
+        // Log when tools are actually executed
+        session.on('conversation.item.created', (item) => {
+          if (item.type === 'function_call_output') {
+            fastify.log.info('🔧 Tool execution result:', item.call_id, 'output:', item.output);
+          }
+        });
+
+        fastify.log.info('🔊 Session setup completed successfully with enhanced logging');
 
       } catch (error) {
         fastify.log.error('Error setting up voice stream:', error);
@@ -540,6 +564,112 @@ fastify.get('/debug/env', async (request, reply) => {
     nodeEnv: process.env.NODE_ENV,
     railwayEnv: process.env.RAILWAY_ENVIRONMENT
   });
+});
+
+// Test endpoint for Google Calendar API connectivity
+fastify.get('/debug/calendar-test', async (request, reply) => {
+  try {
+    // Import CalendarService
+    const CalendarService = (await import('./services/calendarService.js')).default;
+    const calendarService = new CalendarService();
+    
+    // Test initialization
+    const initialized = await calendarService.initialize();
+    if (!initialized) {
+      return reply.send({
+        success: false,
+        error: 'Calendar service failed to initialize - no tokens found',
+        hasTokenFile: await fs.pathExists(TOKEN_FILE)
+      });
+    }
+
+    // Test basic API call
+    try {
+      const events = await calendarService.listEvents({
+        timeMin: new Date().toISOString(),
+        timeMax: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        maxResults: 5
+      });
+
+      reply.send({
+        success: true,
+        message: 'Calendar API is working correctly',
+        eventCount: events.length,
+        hasTokenFile: true,
+        events: events.map(event => ({
+          summary: event.summary,
+          start: event.start?.dateTime || event.start?.date,
+          id: event.id
+        }))
+      });
+    } catch (apiError) {
+      reply.send({
+        success: false,
+        error: 'Calendar API call failed',
+        details: apiError.message,
+        hasTokenFile: true,
+        initialized: true
+      });
+    }
+
+  } catch (error) {
+    fastify.log.error('Calendar test error:', error);
+    reply.status(500).send({
+      success: false,
+      error: 'Calendar test failed',
+      details: error.message
+    });
+  }
+});
+
+// Test endpoint for conflict checking specifically
+fastify.get('/debug/conflict-test', async (request, reply) => {
+  try {
+    const CalendarService = (await import('./services/calendarService.js')).default;
+    const calendarService = new CalendarService();
+    
+    const initialized = await calendarService.initialize();
+    if (!initialized) {
+      return reply.send({
+        success: false,
+        error: 'Calendar service not initialized'
+      });
+    }
+
+    // Test today 6-8pm PST conflict check
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 18, 0, 0); // 6pm
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 20, 0, 0); // 8pm
+
+    const freeBusy = await calendarService.checkFreeBusy(
+      todayStart.toISOString(),
+      todayEnd.toISOString()
+    );
+
+    const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
+    const busyTimes = freeBusy[calendarId]?.busy || [];
+
+    reply.send({
+      success: true,
+      testTimeSlot: {
+        start: todayStart.toISOString(),
+        end: todayEnd.toISOString(),
+        timeSlotDescription: '6-8pm today PST'
+      },
+      conflicts: busyTimes,
+      hasConflicts: busyTimes.length > 0,
+      isAvailable: busyTimes.length === 0,
+      freeBusyResponse: freeBusy
+    });
+
+  } catch (error) {
+    fastify.log.error('Conflict test error:', error);
+    reply.status(500).send({
+      success: false,
+      error: 'Conflict test failed',
+      details: error.message
+    });
+  }
 });
 
 // Start server

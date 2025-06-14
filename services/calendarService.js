@@ -146,17 +146,27 @@ class CalendarService {
   }
 
   async checkFreeBusy(timeMin, timeMax) {
+    console.log('📅 Checking free/busy from', timeMin, 'to', timeMax);
     await this.refreshTokenIfNeeded();
 
-    const response = await this.calendar.freebusy.query({
-      resource: {
-        timeMin: timeMin,
-        timeMax: timeMax,
-        items: [{ id: process.env.GOOGLE_CALENDAR_ID || 'primary' }]
-      }
-    });
+    try {
+      const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
+      console.log('📅 Using calendar ID:', calendarId);
+      
+      const response = await this.calendar.freebusy.query({
+        resource: {
+          timeMin: timeMin,
+          timeMax: timeMax,
+          items: [{ id: calendarId }]
+        }
+      });
 
-    return response.data.calendars;
+      console.log('📅 Free/busy response:', JSON.stringify(response.data, null, 2));
+      return response.data.calendars;
+    } catch (error) {
+      console.error('📅 Free/busy query error:', error);
+      throw error;
+    }
   }
 
   async quickAdd(text) {

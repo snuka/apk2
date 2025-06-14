@@ -1,3 +1,5 @@
+import { tool } from '@openai/agents';
+import { z } from 'zod';
 import CalendarService from '../services/calendarService.js';
 import { 
   parseDateTime, 
@@ -45,35 +47,25 @@ function resolveEventReference(searchQuery) {
 /**
  * Create a new calendar event
  */
-export const createCalendarEvent = {
+export const createCalendarEvent = tool({
   name: 'createCalendarEvent',
   description: 'Create a new event in the user\'s Google Calendar with specified details',
-  parameters: {
-    type: 'object',
-    properties: {
-      summary: { type: 'string', description: 'The title or summary of the event' },
-      startDateTime: { type: 'string', description: 'Start date/time (natural language or ISO format)' },
-      endDateTime: { type: 'string', description: 'End date/time (optional, defaults to 1 hour after start)' },
-      allDay: { type: 'boolean', description: 'Whether this is an all-day event' },
-      description: { type: 'string', description: 'Event description or notes' },
-      location: { type: 'string', description: 'Physical or virtual location' },
-      attendees: { type: 'string', description: 'Comma-separated list of email addresses' },
-      recurrence: { type: 'string', description: 'Recurrence pattern (e.g., "every weekday", "weekly")' },
-      reminders: { 
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            method: { type: 'string', enum: ['popup', 'email'] },
-            minutes: { type: 'number' }
-          }
-        },
-        description: 'Reminder settings'
-      }
-    },
-    required: ['summary', 'startDateTime']
-  },
+  parameters: z.object({
+    summary: z.string().describe('The title or summary of the event'),
+    startDateTime: z.string().describe('Start date/time (natural language or ISO format)'),
+    endDateTime: z.string().optional().describe('End date/time (optional, defaults to 1 hour after start)'),
+    allDay: z.boolean().optional().describe('Whether this is an all-day event'),
+    description: z.string().optional().describe('Event description or notes'),
+    location: z.string().optional().describe('Physical or virtual location'),
+    attendees: z.string().optional().describe('Comma-separated list of email addresses'),
+    recurrence: z.string().optional().describe('Recurrence pattern (e.g., "every weekday", "weekly")'),
+    reminders: z.array(z.object({
+      method: z.enum(['popup', 'email']),
+      minutes: z.number()
+    })).optional().describe('Reminder settings')
+  }),
   async execute(params) {
+    console.log('🔧 createCalendarEvent called with:', JSON.stringify(params, null, 2));
     try {
       // Ensure calendar is initialized
       const initialized = await calendarService.initialize();
@@ -153,17 +145,14 @@ export const createCalendarEvent = {
 /**
  * Quick add event using natural language
  */
-export const quickAddEvent = {
+export const quickAddEvent = tool({
   name: 'quickAddEvent',
   description: 'Create a calendar event using natural language like "Dinner with John tomorrow at 7pm"',
-  parameters: {
-    type: 'object',
-    properties: {
-      text: { type: 'string', description: 'Natural language description of the event' }
-    },
-    required: ['text']
-  },
+  parameters: z.object({
+    text: z.string().describe('Natural language description of the event')
+  }),
   async execute(params) {
+    console.log('🔧 quickAddEvent called with:', JSON.stringify(params, null, 2));
     try {
       const initialized = await calendarService.initialize();
       if (!initialized) {
@@ -193,19 +182,17 @@ export const quickAddEvent = {
 /**
  * List calendar events
  */
-export const listCalendarEvents = {
+export const listCalendarEvents = tool({
   name: 'listCalendarEvents',
   description: 'Query and list calendar events within a specified time range',
-  parameters: {
-    type: 'object',
-    properties: {
-      timeMin: { type: 'string', description: 'Start of time range (natural language or ISO)' },
-      timeMax: { type: 'string', description: 'End of time range (natural language or ISO)' },
-      searchQuery: { type: 'string', description: 'Text to search for in events' },
-      maxResults: { type: 'number', default: 10, description: 'Maximum number of results to return' }
-    }
-  },
+  parameters: z.object({
+    timeMin: z.string().optional().describe('Start of time range (natural language or ISO)'),
+    timeMax: z.string().optional().describe('End of time range (natural language or ISO)'),
+    searchQuery: z.string().optional().describe('Text to search for in events'),
+    maxResults: z.number().default(10).describe('Maximum number of results to return')
+  }),
   async execute(params) {
+    console.log('🔧 listCalendarEvents called with:', JSON.stringify(params, null, 2));
     try {
       const initialized = await calendarService.initialize();
       if (!initialized) {
@@ -281,28 +268,22 @@ export const listCalendarEvents = {
 /**
  * Update an existing calendar event
  */
-export const updateCalendarEvent = {
+export const updateCalendarEvent = tool({
   name: 'updateCalendarEvent',
   description: 'Update an existing calendar event by ID or by searching for it',
-  parameters: {
-    type: 'object',
-    properties: {
-      eventId: { type: 'string', description: 'The ID of the event to update' },
-      searchQuery: { type: 'string', description: 'Search for event by title if ID not provided' },
-      updates: {
-        type: 'object',
-        properties: {
-          summary: { type: 'string', description: 'New event title' },
-          startDateTime: { type: 'string', description: 'New start time' },
-          endDateTime: { type: 'string', description: 'New end time' },
-          location: { type: 'string', description: 'New location' },
-          description: { type: 'string', description: 'New description' }
-        },
-        description: 'Fields to update'
-      }
-    }
-  },
+  parameters: z.object({
+    eventId: z.string().optional().describe('The ID of the event to update'),
+    searchQuery: z.string().optional().describe('Search for event by title if ID not provided'),
+    updates: z.object({
+      summary: z.string().optional().describe('New event title'),
+      startDateTime: z.string().optional().describe('New start time'),
+      endDateTime: z.string().optional().describe('New end time'),
+      location: z.string().optional().describe('New location'),
+      description: z.string().optional().describe('New description')
+    }).describe('Fields to update')
+  }),
   async execute(params) {
+    console.log('🔧 updateCalendarEvent called with:', JSON.stringify(params, null, 2));
     try {
       const initialized = await calendarService.initialize();
       if (!initialized) {
@@ -385,18 +366,16 @@ export const updateCalendarEvent = {
 /**
  * Delete a calendar event
  */
-export const deleteCalendarEvent = {
+export const deleteCalendarEvent = tool({
   name: 'deleteCalendarEvent',
   description: 'Delete a calendar event by ID or by searching for it',
-  parameters: {
-    type: 'object',
-    properties: {
-      eventId: { type: 'string', description: 'The ID of the event to delete' },
-      searchQuery: { type: 'string', description: 'Search for event by title if ID not provided' },
-      sendNotifications: { type: 'boolean', default: true, description: 'Whether to notify attendees' }
-    }
-  },
+  parameters: z.object({
+    eventId: z.string().optional().describe('The ID of the event to delete'),
+    searchQuery: z.string().optional().describe('Search for event by title if ID not provided'),
+    sendNotifications: z.boolean().default(true).describe('Whether to notify attendees')
+  }),
   async execute(params) {
+    console.log('🔧 deleteCalendarEvent called with:', JSON.stringify(params, null, 2));
     try {
       const initialized = await calendarService.initialize();
       if (!initialized) {
@@ -451,20 +430,17 @@ export const deleteCalendarEvent = {
 };
 
 /**
- * Check free/busy times
+ * Check free/busy times and detect conflicts
  */
-export const checkFreeBusy = {
+export const checkFreeBusy = tool({
   name: 'checkFreeBusy',
-  description: 'Check when the user is free or busy during a specified time range',
-  parameters: {
-    type: 'object',
-    properties: {
-      timeMin: { type: 'string', description: 'Start of time range to check (natural language or ISO)' },
-      timeMax: { type: 'string', description: 'End of time range to check (natural language or ISO)' }
-    },
-    required: ['timeMin', 'timeMax']
-  },
+  description: 'Check when the user is free or busy during a specified time range and detect scheduling conflicts',
+  parameters: z.object({
+    timeMin: z.string().describe('Start of time range to check (natural language or ISO)'),
+    timeMax: z.string().describe('End of time range to check (natural language or ISO)')
+  }),
   async execute(params) {
+    console.log('🔧 checkFreeBusy called with:', JSON.stringify(params, null, 2));
     try {
       const initialized = await calendarService.initialize();
       if (!initialized) {
@@ -510,7 +486,9 @@ export const checkFreeBusy = {
       return {
         success: true,
         message: `You have ${busyTimes.length} busy period${busyTimes.length > 1 ? 's' : ''}: ${busyDescriptions}`,
-        busyTimes: busyTimes
+        busyTimes: busyTimes,
+        isAvailable: busyTimes.length === 0,
+        hasConflicts: busyTimes.length > 0
       };
 
     } catch (error) {
@@ -520,4 +498,77 @@ export const checkFreeBusy = {
       };
     }
   }
-};
+});
+
+/**
+ * Check for scheduling conflicts for a specific time slot
+ */
+export const checkSchedulingConflict = tool({
+  name: 'checkSchedulingConflict',
+  description: 'Check if a specific time slot conflicts with existing calendar events',
+  parameters: z.object({
+    startTime: z.string().describe('Start time of the proposed slot (natural language or ISO)'),
+    endTime: z.string().describe('End time of the proposed slot (natural language or ISO)')
+  }),
+  async execute(params) {
+    console.log('🔧 checkSchedulingConflict called with:', JSON.stringify(params, null, 2));
+    
+    try {
+      const initialized = await calendarService.initialize();
+      if (!initialized) {
+        return {
+          error: 'Google Calendar is not connected. Please ask the user to connect their calendar through the admin interface.'
+        };
+      }
+
+      // Parse the proposed time slot
+      const startParsed = parseDateTime(params.startTime);
+      const endParsed = parseDateTime(params.endTime);
+
+      if (!startParsed || !endParsed) {
+        return {
+          error: 'I couldn\'t understand the time slot. Please provide clearer dates and times.'
+        };
+      }
+
+      // Check for conflicts
+      const freeBusy = await calendarService.checkFreeBusy(
+        startParsed.start.toISOString(),
+        endParsed.start.toISOString()
+      );
+
+      const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
+      const busyTimes = freeBusy[calendarId]?.busy || [];
+
+      const hasConflict = busyTimes.length > 0;
+      
+      if (hasConflict) {
+        const conflictDescriptions = busyTimes.map(busy => 
+          `conflict from ${formatDateForVoice(new Date(busy.start))} to ${formatDateForVoice(new Date(busy.end))}`
+        ).join(', ');
+
+        return {
+          success: true,
+          hasConflict: true,
+          message: `The requested time slot conflicts with existing events: ${conflictDescriptions}`,
+          conflicts: busyTimes,
+          isAvailable: false
+        };
+      } else {
+        return {
+          success: true,
+          hasConflict: false,
+          message: `The time slot from ${formatDateForVoice(startParsed.start)} to ${formatDateForVoice(endParsed.start)} is available`,
+          isAvailable: true,
+          conflicts: []
+        };
+      }
+
+    } catch (error) {
+      console.error('Error checking scheduling conflict:', error);
+      return {
+        error: 'I encountered an error while checking for conflicts. Please try again.'
+      };
+    }
+  }
+});

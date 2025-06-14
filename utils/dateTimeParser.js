@@ -8,6 +8,15 @@ import { addHours, startOfDay, endOfDay, startOfWeek, endOfWeek, addDays } from 
  * @returns {Object} Parsed date information
  */
 export function parseDateTime(text, referenceDate = new Date()) {
+  console.log('🕐 Parsing date/time:', text);
+  
+  // First try timezone-specific patterns
+  const timezoneResult = parseTimezonePatterns(text, referenceDate);
+  if (timezoneResult) {
+    console.log('🕐 Timezone pattern matched:', timezoneResult);
+    return timezoneResult;
+  }
+
   // Use chrono-node for natural language parsing
   const results = chrono.parse(text, referenceDate, { forwardDate: true });
   
@@ -23,13 +32,127 @@ export function parseDateTime(text, referenceDate = new Date()) {
   // If no end time specified, default to 1 hour duration for events
   const endTime = end || addHours(start, 1);
 
-  return {
+  const parsed = {
     start: start,
     end: endTime,
     allDay: !result.start.isCertain('hour'),
     text: result.text,
     index: result.index
   };
+
+  console.log('🕐 Chrono parsed result:', parsed);
+  return parsed;
+}
+
+/**
+ * Parse timezone-specific patterns
+ */
+function parseTimezonePatterns(text, referenceDate) {
+  const lowerText = text.toLowerCase();
+  
+  // PST/PDT specific patterns
+  const pstPattern = /(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*(?:to|-)?\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?\s*pst|pdt/i;
+  const match = lowerText.match(pstPattern);
+  
+  if (match) {
+    console.log('🕐 PST pattern matched:', match);
+    
+    // Handle "today" context
+    let baseDate = referenceDate;
+    if (lowerText.includes('today')) {
+      baseDate = new Date();
+    } else if (lowerText.includes('tomorrow')) {
+      baseDate = addDays(new Date(), 1);
+    }
+    
+    // Parse start time
+    const startTimeStr = match[1];
+    const endTimeStr = match[2];
+    
+    try {
+      // Create PST-specific date strings
+      const dateStr = baseDate.toDateString();
+      const startDateTime = chrono.parseDate(`${dateStr} ${startTimeStr} PST`);
+      
+      if (!startDateTime) {
+        console.log('🕐 Failed to parse PST start time');
+        return null;
+      }
+      
+      let endDateTime;
+      if (endTimeStr) {
+        endDateTime = chrono.parseDate(`${dateStr} ${endTimeStr} PST`);
+      } else {
+        // Default to 1 hour duration
+        endDateTime = addHours(startDateTime, 1);
+      }
+      
+      const result = {
+        start: startDateTime,
+        end: endDateTime,
+        allDay: false,
+        text: text,
+        index: 0,
+        timezone: 'PST'
+      };
+      
+      console.log('🕐 PST pattern result:', result);
+      return result;
+      
+    } catch (error) {
+      console.log('🕐 Error parsing PST time:', error);
+      return null;
+    }
+  }
+  
+  // Time range patterns like "6-8pm", "6pm-8pm", "6 to 8pm"
+  const rangePattern = /(\d{1,2}(?::\d{2})?)\s*(?:am|pm)?\s*(?:to|-)\s*(\d{1,2}(?::\d{2})?)\s*(am|pm)/i;
+  const rangeMatch = text.match(rangePattern);
+  
+  if (rangeMatch) {
+    console.log('🕐 Time range pattern matched:', rangeMatch);
+    
+    let baseDate = referenceDate;
+    if (lowerText.includes('today')) {
+      baseDate = new Date();
+    } else if (lowerText.includes('tomorrow')) {
+      baseDate = addDays(new Date(), 1);
+    }
+    
+    const startTime = rangeMatch[1];
+    const endTime = rangeMatch[2];
+    const period = rangeMatch[3];
+    
+    try {
+      const dateStr = baseDate.toDateString();
+      
+      // Handle cases like "6-8pm" where first time inherits the period
+      const startTimeWithPeriod = startTime.includes('am') || startTime.includes('pm') ? 
+        startTime : `${startTime}${period}`;
+      const endTimeWithPeriod = endTime.includes('am') || endTime.includes('pm') ? 
+        endTime : `${endTime}${period}`;
+      
+      const startDateTime = chrono.parseDate(`${dateStr} ${startTimeWithPeriod}`);
+      const endDateTime = chrono.parseDate(`${dateStr} ${endTimeWithPeriod}`);
+      
+      if (startDateTime && endDateTime) {
+        const result = {
+          start: startDateTime,
+          end: endDateTime,
+          allDay: false,
+          text: text,
+          index: 0
+        };
+        
+        console.log('🕐 Time range result:', result);
+        return result;
+      }
+    } catch (error) {
+      console.log('🕐 Error parsing time range:', error);
+    }
+  }
+  
+  return null;
 }
 
 /**

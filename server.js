@@ -138,11 +138,23 @@ console.log('Client ID:', process.env.GOOGLE_CLIENT_ID ? 'Found' : 'Missing');
 console.log('Client Secret:', process.env.GOOGLE_CLIENT_SECRET ? 'Found' : 'Missing');
 console.log('Redirect URI:', process.env.GOOGLE_REDIRECT_URI);
 
+// Validate required OAuth2 credentials
+if (!process.env.GOOGLE_CLIENT_ID) {
+  console.error('❌ CRITICAL: GOOGLE_CLIENT_ID environment variable is not set!');
+  console.error('Available env vars:', Object.keys(process.env).filter(key => key.includes('GOOGLE')));
+}
+
+if (!process.env.GOOGLE_CLIENT_SECRET) {
+  console.error('❌ CRITICAL: GOOGLE_CLIENT_SECRET environment variable is not set!');
+}
+
 // Initialize OAuth2 client without redirect_uri to avoid conflicts
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET
 );
+
+console.log('OAuth2 client initialized successfully');
 
 // Helper function to get the correct redirect URI
 function getRedirectUri(request) {
@@ -508,6 +520,25 @@ fastify.get('/ping', async (request, reply) => {
     status: 'ok', 
     timestamp: new Date().toISOString(),
     service: 'alwayspickup-railway' 
+  });
+});
+
+// Debug endpoint to check environment variables
+fastify.get('/debug/env', async (request, reply) => {
+  const googleVars = Object.keys(process.env)
+    .filter(key => key.includes('GOOGLE'))
+    .reduce((obj, key) => {
+      obj[key] = process.env[key] ? `Set (${process.env[key].substring(0, 10)}...)` : 'Missing';
+      return obj;
+    }, {});
+  
+  reply.send({
+    googleEnvironmentVariables: googleVars,
+    hasClientId: !!process.env.GOOGLE_CLIENT_ID,
+    hasClientSecret: !!process.env.GOOGLE_CLIENT_SECRET,
+    hasRedirectUri: !!process.env.GOOGLE_REDIRECT_URI,
+    nodeEnv: process.env.NODE_ENV,
+    railwayEnv: process.env.RAILWAY_ENVIRONMENT
   });
 });
 

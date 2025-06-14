@@ -85,19 +85,47 @@ class CalendarService {
   }
 
   async listEvents(params) {
-    await this.refreshTokenIfNeeded();
+    console.log('📍 CalendarService.listEvents called with:', params);
+    
+    try {
+      // Ensure we're initialized
+      if (!this.calendar) {
+        console.log('❌ Calendar not initialized, attempting to initialize...');
+        const initialized = await this.initialize();
+        if (!initialized) {
+          throw new Error('Failed to initialize calendar service');
+        }
+      }
+      
+      await this.refreshTokenIfNeeded();
+      
+      // Double-check calendar is available after refresh
+      if (!this.calendar) {
+        throw new Error('Calendar API client is not available after initialization');
+      }
 
-    const response = await this.calendar.events.list({
-      calendarId: process.env.GOOGLE_CALENDAR_ID || 'primary',
-      timeMin: params.timeMin,
-      timeMax: params.timeMax,
-      maxResults: params.maxResults || 10,
-      singleEvents: true,
-      orderBy: 'startTime',
-      q: params.searchQuery
-    });
+      console.log('📍 Calling Google Calendar API...');
+      const response = await this.calendar.events.list({
+        calendarId: process.env.GOOGLE_CALENDAR_ID || 'primary',
+        timeMin: params.timeMin,
+        timeMax: params.timeMax,
+        maxResults: params.maxResults || 10,
+        singleEvents: true,
+        orderBy: 'startTime',
+        q: params.searchQuery
+      });
 
-    return response.data.items || [];
+      console.log('📍 Google Calendar API response received, items count:', response.data.items?.length || 0);
+      return response.data.items || [];
+    } catch (error) {
+      console.error('❌ CalendarService.listEvents error:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        code: error.code,
+        errors: error.errors
+      });
+      throw error;
+    }
   }
 
   async updateEvent(eventId, updates) {

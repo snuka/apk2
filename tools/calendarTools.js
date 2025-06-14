@@ -178,14 +178,19 @@ export const listCalendarEvents = tool({
   async execute(params) {
     console.log('🔧 listCalendarEvents called with:', JSON.stringify(params, null, 2));
     try {
+      console.log('📍 Step 1: Initializing calendar service...');
       const initialized = await calendarService.initialize();
+      console.log('📍 Calendar service initialized:', initialized);
+      
       if (!initialized) {
+        console.log('❌ Calendar service initialization failed');
         return {
           error: 'Google Calendar is not connected. Please ask the user to connect their calendar through the admin interface.'
         };
       }
 
       // Parse ISO dates - the AI should handle all natural language conversion
+      console.log('📍 Step 2: Parsing dates...');
       let timeMin = params.timeMin ? new Date(params.timeMin) : new Date();
       let timeMax = params.timeMax ? new Date(params.timeMax) : new Date(timeMin.getTime() + 7 * 24 * 60 * 60 * 1000);
 
@@ -196,14 +201,33 @@ export const listCalendarEvents = tool({
         timeMaxLocal: timeMax.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' })
       });
 
-      const events = await calendarService.listEvents({
-        timeMin: timeMin.toISOString(),
-        timeMax: timeMax.toISOString(),
-        searchQuery: params.searchQuery,
-        maxResults: params.maxResults
-      });
+      console.log('📍 Step 3: Calling calendarService.listEvents...');
+      let events;
+      try {
+        events = await calendarService.listEvents({
+          timeMin: timeMin.toISOString(),
+          timeMax: timeMax.toISOString(),
+          searchQuery: params.searchQuery,
+          maxResults: params.maxResults
+        });
+        console.log('📍 Step 4: listEvents returned:', events ? `${events.length} events` : 'null/undefined');
+      } catch (serviceError) {
+        console.error('❌ calendarService.listEvents error:', serviceError);
+        console.error('❌ Error stack:', serviceError.stack);
+        return {
+          error: `Calendar service error: ${serviceError.message || 'Unknown error occurred'}`
+        };
+      }
+
+      if (!events) {
+        console.log('❌ Events is null/undefined');
+        return {
+          error: 'Failed to retrieve events - no data returned from calendar service'
+        };
+      }
 
       if (events.length === 0) {
+        console.log('📍 No events found for time period');
         return {
           success: true,
           message: 'You have no events scheduled for that time period.',

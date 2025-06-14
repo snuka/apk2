@@ -16,11 +16,17 @@
     "@fastify/formbody": "^7.4.0",
     "@fastify/static": "^6.12.0",
     "@fastify/websocket": "^8.3.1",
-    "@openai/agents-extensions": "latest",
+    "@google-cloud/local-auth": "^3.0.1",
     "@openai/agents": "latest",
-    "dotenv": "^16.4.5",
+    "@openai/agents-extensions": "latest",
+    "chrono-node": "^2.8.2",
+    "crypto-js": "^4.2.0",
+    "date-fns": "^4.1.0",
+    "dotenv": "^16.5.0",
     "fastify": "^4.26.2",
-    "fs-extra": "^11.2.0"
+    "fs-extra": "^11.2.0",
+    "googleapis": "^150.0.1",
+    "zod": "^3.25.64"
   },
   "engines": {
     "node": ">=18.0.0"

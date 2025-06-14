@@ -40,7 +40,6 @@ railway.json
 prompts.json
 
 # Admin build output
-public/admin/assets/
 admin/dist/
 
 # Logs
@@ -49,3 +48,4 @@ logs
 
 # OS files
 Thumbs.db
+google_tokens.json

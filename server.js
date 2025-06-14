@@ -1,9 +1,23 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import Fastify from 'fastify';
 import { RealtimeAgent, RealtimeSession } from '@openai/agents/realtime';
 import { TwilioRealtimeTransportLayer } from '@openai/agents-extensions';
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { google } from 'googleapis';
+import crypto from 'crypto';
+import {
+  createCalendarEvent,
+  quickAddEvent,
+  listCalendarEvents,
+  updateCalendarEvent,
+  deleteCalendarEvent,
+  checkFreeBusy,
+  setContextManager
+} from './tools/calendarTools.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,6 +38,166 @@ await fastify.register(import('@fastify/cors'));
 
 // Register form body parser for Twilio webhooks
 await fastify.register(import('@fastify/formbody'));
+
+// Context Management System
+class ConversationContext {
+  constructor() {
+    this.sessions = new Map(); // sessionId -> context data
+  }
+
+  getSession(sessionId) {
+    if (!this.sessions.has(sessionId)) {
+      this.sessions.set(sessionId, {
+        lastCalendarQuery: null,
+        lastEventsList: [],
+        lastSearchQuery: null,
+        pendingOperations: [],
+        conversationHistory: []
+      });
+    }
+    return this.sessions.get(sessionId);
+  }
+
+  updateLastQuery(sessionId, queryType, queryParams, results) {
+    const session = this.getSession(sessionId);
+    session.lastCalendarQuery = {
+      type: queryType,
+      params: queryParams,
+      results: results,
+      timestamp: new Date()
+    };
+    
+    if (queryType === 'listCalendarEvents' && results.events) {
+      session.lastEventsList = results.events;
+    }
+  }
+
+  findEventByReference(sessionId, reference) {
+    const session = this.getSession(sessionId);
+    const events = session.lastEventsList;
+    
+    if (!events || events.length === 0) {
+      return null;
+    }
+
+    // Clean reference for matching
+    const cleanRef = reference.toLowerCase().replace(/[^a-z0-9\s]/g, '');
+    
+    // Try to match by summary
+    let matchedEvent = events.find(event => 
+      event.summary && event.summary.toLowerCase().includes(cleanRef)
+    );
+
+    if (matchedEvent) return matchedEvent;
+
+    // Try to match by attendee names (if reference contains a name)
+    const nameWords = cleanRef.split(' ').filter(word => word.length > 2);
+    for (const word of nameWords) {
+      matchedEvent = events.find(event => 
+        event.attendees && event.attendees.toLowerCase().includes(word)
+      );
+      if (matchedEvent) return matchedEvent;
+    }
+
+    // If only one event, return it for ambiguous references like "that meeting"
+    if (events.length === 1 && 
+        ['that', 'the', 'this', 'it'].some(ref => cleanRef.includes(ref))) {
+      return events[0];
+    }
+
+    return null;
+  }
+
+  addConversationItem(sessionId, type, content) {
+    const session = this.getSession(sessionId);
+    session.conversationHistory.push({
+      type,
+      content,
+      timestamp: new Date()
+    });
+    
+    // Keep only last 10 conversation items to avoid memory issues
+    if (session.conversationHistory.length > 10) {
+      session.conversationHistory = session.conversationHistory.slice(-10);
+    }
+  }
+
+  clearSession(sessionId) {
+    this.sessions.delete(sessionId);
+  }
+}
+
+const conversationContext = new ConversationContext();
+
+// Inject context manager into calendar tools
+setContextManager(conversationContext);
+
+// Google OAuth2 Setup
+console.log('Loading Google OAuth2 credentials...');
+console.log('Client ID:', process.env.GOOGLE_CLIENT_ID ? 'Found' : 'Missing');
+console.log('Client Secret:', process.env.GOOGLE_CLIENT_SECRET ? 'Found' : 'Missing');
+console.log('Redirect URI:', process.env.GOOGLE_REDIRECT_URI);
+
+const oauth2Client = new google.auth.OAuth2(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  process.env.GOOGLE_REDIRECT_URI
+);
+
+// Token storage
+const TOKEN_FILE = path.join(__dirname, 'google_tokens.json');
+
+// Encryption helpers
+const algorithm = 'aes-256-gcm';
+const encryptionKey = process.env.TOKEN_ENCRYPTION_KEY ? 
+  crypto.scryptSync(process.env.TOKEN_ENCRYPTION_KEY, 'salt', 32) : 
+  crypto.randomBytes(32);
+
+function encryptTokens(tokens) {
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv(algorithm, encryptionKey, iv);
+  
+  let encrypted = cipher.update(JSON.stringify(tokens), 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  
+  const authTag = cipher.getAuthTag();
+  
+  return {
+    encrypted,
+    iv: iv.toString('hex'),
+    authTag: authTag.toString('hex')
+  };
+}
+
+function decryptTokens(encryptedData) {
+  const decipher = crypto.createDecipheriv(
+    algorithm, 
+    encryptionKey, 
+    Buffer.from(encryptedData.iv, 'hex')
+  );
+  
+  decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
+  
+  let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  
+  return JSON.parse(decrypted);
+}
+
+async function getGoogleEmail(accessToken) {
+  try {
+    const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+    const data = await response.json();
+    return data.email;
+  } catch (error) {
+    fastify.log.error('Error fetching Google email:', error);
+    return null;
+  }
+}
 
 // Prompt storage helpers
 const PROMPTS_FILE = path.join(__dirname, 'prompts.json');
@@ -104,7 +278,91 @@ fastify.get('/api/prompt', async (request, reply) => {
   }
 });
 
-// 3. Twilio Voice Webhook
+// 3. Google OAuth2 endpoints
+fastify.get('/api/auth/google/init', async (request, reply) => {
+  const { state } = request.query;
+  
+  const authUrl = oauth2Client.generateAuthUrl({
+    access_type: 'offline',
+    scope: [
+      'https://www.googleapis.com/auth/calendar',
+      'https://www.googleapis.com/auth/calendar.events'
+    ],
+    state: state || crypto.randomBytes(16).toString('hex'),
+    redirect_uri: process.env.GOOGLE_REDIRECT_URI
+  });
+  
+  reply.redirect(authUrl);
+});
+
+fastify.get('/api/auth/google/callback', async (request, reply) => {
+  const { code, state } = request.query;
+  
+  try {
+    // Exchange code for tokens
+    const { tokens } = await oauth2Client.getToken(code);
+    
+    // Get user email
+    const email = await getGoogleEmail(tokens.access_token);
+    
+    // Store tokens securely
+    await fs.writeJson(TOKEN_FILE, {
+      tokens: encryptTokens(tokens),
+      email: email,
+      lastSynced: new Date().toISOString()
+    });
+    
+    fastify.log.info('Google OAuth tokens stored successfully');
+    reply.redirect('/admin?calendar=connected');
+  } catch (error) {
+    fastify.log.error('OAuth callback error:', error);
+    reply.redirect('/admin?calendar=error');
+  }
+});
+
+fastify.get('/api/auth/google/status', async (request, reply) => {
+  try {
+    if (await fs.pathExists(TOKEN_FILE)) {
+      const data = await fs.readJson(TOKEN_FILE);
+      
+      // Check if tokens are valid
+      try {
+        const tokens = decryptTokens(data.tokens);
+        oauth2Client.setCredentials(tokens);
+        
+        // Test the tokens
+        const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+        await calendar.calendarList.list({ maxResults: 1 });
+        
+        reply.send({
+          isConnected: true,
+          email: data.email,
+          lastSynced: data.lastSynced
+        });
+      } catch (error) {
+        fastify.log.error('Token validation error:', error);
+        reply.send({ isConnected: false });
+      }
+    } else {
+      reply.send({ isConnected: false });
+    }
+  } catch (error) {
+    fastify.log.error('Status check error:', error);
+    reply.send({ isConnected: false });
+  }
+});
+
+fastify.post('/api/auth/google/disconnect', async (request, reply) => {
+  try {
+    await fs.remove(TOKEN_FILE);
+    reply.send({ success: true });
+  } catch (error) {
+    fastify.log.error('Disconnect error:', error);
+    reply.status(500).send({ error: 'Failed to disconnect' });
+  }
+});
+
+// 4. Twilio Voice Webhook
 fastify.post('/voice', async (request, reply) => {
   try {
     fastify.log.info('Incoming Twilio webhook:', request.body);
@@ -129,7 +387,7 @@ fastify.post('/voice', async (request, reply) => {
   }
 });
 
-// 4. WebSocket for Twilio Media Streams
+// 5. WebSocket for Twilio Media Streams
 fastify.register(async function (fastify) {
   fastify.get('/media', { websocket: true }, (connection, req) => {
     fastify.log.info('WebSocket connection established for voice stream');
@@ -147,11 +405,19 @@ fastify.register(async function (fastify) {
         fastify.log.info('📝 Using instruction:', instruction);
         fastify.log.info('🎤 Using voice:', voice);
 
-        // Create RealtimeAgent with dynamic prompt and voice
+        // Create RealtimeAgent with dynamic prompt, voice, and calendar tools
         const agent = new RealtimeAgent({
           name: 'AlwaysPickup Assistant',
-          instructions: instruction,
+          instructions: instruction + '\n\nYou have access to Google Calendar and can help users manage their events. You can create, update, delete, and query calendar events using voice commands.',
           voice: voice,
+          tools: [
+            createCalendarEvent,
+            quickAddEvent,
+            listCalendarEvents,
+            updateCalendarEvent,
+            deleteCalendarEvent,
+            checkFreeBusy
+          ]
         });
         fastify.log.info('🤖 RealtimeAgent created with voice:', voice);
 
@@ -212,7 +478,7 @@ fastify.register(async function (fastify) {
   });
 });
 
-// 5. Health check / keep-warm
+// 6. Health check / keep-warm
 fastify.get('/ping', async (request, reply) => {
   reply.send({ 
     status: 'ok', 

@@ -9,6 +9,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { google } from 'googleapis';
 import crypto from 'crypto';
+import { encryptTokens, decryptTokens } from './utils/encryption.js';
 import {
   createCalendarEvent,
   quickAddEvent,
@@ -172,43 +173,6 @@ function getRedirectUri(request) {
 
 // Token storage
 const TOKEN_FILE = path.join(__dirname, 'google_tokens.json');
-
-// Encryption helpers
-const algorithm = 'aes-256-gcm';
-const encryptionKey = process.env.TOKEN_ENCRYPTION_KEY ? 
-  crypto.scryptSync(process.env.TOKEN_ENCRYPTION_KEY, 'salt', 32) : 
-  crypto.randomBytes(32);
-
-function encryptTokens(tokens) {
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv(algorithm, encryptionKey, iv);
-  
-  let encrypted = cipher.update(JSON.stringify(tokens), 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  
-  const authTag = cipher.getAuthTag();
-  
-  return {
-    encrypted,
-    iv: iv.toString('hex'),
-    authTag: authTag.toString('hex')
-  };
-}
-
-function decryptTokens(encryptedData) {
-  const decipher = crypto.createDecipheriv(
-    algorithm, 
-    encryptionKey, 
-    Buffer.from(encryptedData.iv, 'hex')
-  );
-  
-  decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
-  
-  let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-  
-  return JSON.parse(decrypted);
-}
 
 async function getGoogleEmail(accessToken) {
   try {

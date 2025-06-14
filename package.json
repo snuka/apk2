@@ -1,0 +1,38 @@
+{
+  "name": "alwayspickup-lite",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "AlwaysPickup-Lite Voice Agent - AI phone answering service powered by OpenAI Realtime API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "build": "npm run build:admin",
+    "build:admin": "cd admin && npm install && npm run build",
+    "setup": "npm install && cd admin && npm install"
+  },
+  "dependencies": {
+    "@fastify/cors": "^8.5.0",
+    "@fastify/formbody": "^7.4.0",
+    "@fastify/static": "^6.12.0",
+    "@fastify/websocket": "^8.3.1",
+    "@openai/agents-extensions": "latest",
+    "@openai/agents": "latest",
+    "dotenv": "^16.4.5",
+    "fastify": "^4.26.2",
+    "fs-extra": "^11.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "voice-agent",
+    "openai",
+    "twilio",
+    "realtime-api",
+    "railway",
+    "fastify"
+  ],
+  "author": "AlwaysPickup Team",
+  "license": "MIT"
+}

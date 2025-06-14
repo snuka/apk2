@@ -138,11 +138,24 @@ console.log('Client ID:', process.env.GOOGLE_CLIENT_ID ? 'Found' : 'Missing');
 console.log('Client Secret:', process.env.GOOGLE_CLIENT_SECRET ? 'Found' : 'Missing');
 console.log('Redirect URI:', process.env.GOOGLE_REDIRECT_URI);
 
+// Initialize OAuth2 client without redirect_uri to avoid conflicts
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  process.env.GOOGLE_REDIRECT_URI
+  process.env.GOOGLE_CLIENT_SECRET
 );
+
+// Helper function to get the correct redirect URI
+function getRedirectUri(request) {
+  // Use environment variable if set, otherwise construct from request
+  if (process.env.GOOGLE_REDIRECT_URI) {
+    return process.env.GOOGLE_REDIRECT_URI;
+  }
+  
+  // Fallback: construct from request headers
+  const protocol = request.headers['x-forwarded-proto'] || request.protocol || 'https';
+  const host = request.headers.host;
+  return `${protocol}://${host}/api/auth/google/callback`;
+}
 
 // Token storage
 const TOKEN_FILE = path.join(__dirname, 'google_tokens.json');
@@ -282,6 +295,10 @@ fastify.get('/api/prompt', async (request, reply) => {
 fastify.get('/api/auth/google/init', async (request, reply) => {
   const { state } = request.query;
   
+  // Get the correct redirect URI for this request
+  const redirectUri = getRedirectUri(request);
+  fastify.log.info('OAuth init - using redirect_uri:', redirectUri);
+  
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: 'offline',
     scope: [
@@ -289,7 +306,7 @@ fastify.get('/api/auth/google/init', async (request, reply) => {
       'https://www.googleapis.com/auth/calendar.events'
     ],
     state: state || crypto.randomBytes(16).toString('hex'),
-    redirect_uri: process.env.GOOGLE_REDIRECT_URI
+    redirect_uri: redirectUri
   });
   
   reply.redirect(authUrl);
@@ -299,10 +316,14 @@ fastify.get('/api/auth/google/callback', async (request, reply) => {
   const { code, state } = request.query;
   
   try {
+    // Get the same redirect URI used in the init request
+    const redirectUri = getRedirectUri(request);
+    fastify.log.info('OAuth callback - using redirect_uri:', redirectUri);
+    
     // Exchange code for tokens with explicit redirect_uri
     const { tokens } = await oauth2Client.getToken({
       code: code,
-      redirect_uri: process.env.GOOGLE_REDIRECT_URI
+      redirect_uri: redirectUri
     });
     
     // Get user email

@@ -183,14 +183,37 @@ class CalendarService {
   async findEventByTitle(title) {
     const events = await this.listEvents({
       searchQuery: title,
-      timeMin: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), // Past week
-      timeMax: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // Next 30 days
-      maxResults: 50
+      timeMin: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(), // Past 30 days
+      timeMax: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(), // Next 90 days
+      maxResults: 100
     });
 
-    return events.find(event => 
-      event.summary && event.summary.toLowerCase().includes(title.toLowerCase())
+    // Clean the search title for better matching
+    const cleanTitle = title.toLowerCase().trim();
+    
+    // Try exact match first
+    let matchedEvent = events.find(event => 
+      event.summary && event.summary.toLowerCase() === cleanTitle
     );
+    
+    // If no exact match, try contains
+    if (!matchedEvent) {
+      matchedEvent = events.find(event => 
+        event.summary && event.summary.toLowerCase().includes(cleanTitle)
+      );
+    }
+    
+    // If still no match, try partial word matching
+    if (!matchedEvent) {
+      const searchWords = cleanTitle.split(/\s+/).filter(word => word.length > 2);
+      matchedEvent = events.find(event => {
+        if (!event.summary) return false;
+        const eventTitle = event.summary.toLowerCase();
+        return searchWords.some(word => eventTitle.includes(word));
+      });
+    }
+    
+    return matchedEvent;
   }
 }
 

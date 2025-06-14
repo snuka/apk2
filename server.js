@@ -471,20 +471,53 @@ CRITICAL INSTRUCTIONS FOR CALENDAR OPERATIONS:
    - For "what's my schedule tomorrow":
      - timeMin: "2025-06-15T00:00:00-07:00" (start of tomorrow Pacific)
      - timeMax: "2025-06-15T23:59:59-07:00" (end of tomorrow Pacific)
-   
-4. EXAMPLE CONVERSIONS:
-   - User: "Schedule a meeting tomorrow at 2pm"
-     - You calculate: Tomorrow is June 15, 2025, so pass startDateTime: "2025-06-15T14:00:00-07:00"
-   - User: "Am I free today between 4 and 6pm?"
-     - You calculate: Today is June 14, 2025, so pass:
-       - timeMin: "2025-06-14T16:00:00-07:00"
-       - timeMax: "2025-06-14T18:00:00-07:00"
 
-5. CONFLICT CHECKING:
+4. MODIFYING EXISTING EVENTS - CRITICAL INSTRUCTIONS:
+   
+   For UPDATE requests like "change my cooking class to 2pm" or "move the meeting to tomorrow":
+   a) FIRST, call listCalendarEvents to find events in the relevant time period
+   b) Extract the event name from the user's request:
+      - "change my cooking class to 2pm" → searchQuery: "cooking class"
+      - "move the dentist appointment" → searchQuery: "dentist"
+      - "reschedule the team meeting" → searchQuery: "team meeting"
+   c) Call updateCalendarEvent with:
+      - eventId: null (unless you have it from a previous operation)
+      - searchQuery: Just the event name/title (e.g., "cooking class", NOT "change my cooking class")
+      - updates: Object with the new values in ISO format
+   
+   For DELETE requests like "cancel my cooking class" or "remove the meeting":
+   a) Extract just the event name: "cooking class" or "meeting"
+   b) Call deleteCalendarEvent with:
+      - eventId: null
+      - searchQuery: Just the event name (e.g., "cooking class", NOT "cancel my cooking class")
+      - sendNotifications: true (unless user says otherwise)
+
+5. EXAMPLE CONVERSIONS:
+   - User: "Change my cooking class to 3pm tomorrow"
+     - You: First list events, then call updateCalendarEvent with:
+       - searchQuery: "cooking class"
+       - updates: { startDateTime: "2025-06-15T15:00:00-07:00", endDateTime: "2025-06-15T16:00:00-07:00" }
+   
+   - User: "Cancel the dentist appointment"
+     - You: Call deleteCalendarEvent with:
+       - searchQuery: "dentist"
+       - sendNotifications: true
+   
+   - User: "Move that meeting to next Monday at 10am"
+     - You: If you just listed events and there's context, use the event from context
+       - searchQuery: "that meeting" (will use context)
+       - updates: { startDateTime: "2025-06-16T10:00:00-07:00", endDateTime: "2025-06-16T11:00:00-07:00" }
+
+6. SEARCH QUERY TIPS:
+   - Use partial matches: "cooking" will find "Cooking Class with Chef John"
+   - Be specific enough to avoid ambiguity
+   - If multiple events match, ask the user to be more specific
+
+7. CONFLICT CHECKING:
    - Always use checkSchedulingConflict before creating events to verify availability
    - If conflicts exist, inform the user and suggest alternative times
 
-Remember: The tools expect ISO 8601 format dates ONLY. You must do all natural language processing yourself.`,
+Remember: The tools expect ISO 8601 format dates ONLY. You must do all natural language processing yourself. For modifications, extract clean event names for searchQuery parameters.`,
           voice: voice,
           tools: [
             createCalendarEvent,

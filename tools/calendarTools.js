@@ -53,16 +53,16 @@ export const createCalendarEvent = tool({
   parameters: z.object({
     summary: z.string().describe('The title or summary of the event'),
     startDateTime: z.string().describe('Start date/time (natural language or ISO format)'),
-    endDateTime: z.string().optional().describe('End date/time (optional, defaults to 1 hour after start)'),
-    allDay: z.boolean().optional().describe('Whether this is an all-day event'),
-    description: z.string().optional().describe('Event description or notes'),
-    location: z.string().optional().describe('Physical or virtual location'),
-    attendees: z.string().optional().describe('Comma-separated list of email addresses'),
-    recurrence: z.string().optional().describe('Recurrence pattern (e.g., "every weekday", "weekly")'),
+    endDateTime: z.string().nullable().describe('End date/time (optional, defaults to 1 hour after start)'),
+    allDay: z.boolean().nullable().describe('Whether this is an all-day event'),
+    description: z.string().nullable().describe('Event description or notes'),
+    location: z.string().nullable().describe('Physical or virtual location'),
+    attendees: z.string().nullable().describe('Comma-separated list of email addresses'),
+    recurrence: z.string().nullable().describe('Recurrence pattern (e.g., "every weekday", "weekly")'),
     reminders: z.array(z.object({
       method: z.enum(['popup', 'email']),
       minutes: z.number()
-    })).optional().describe('Reminder settings')
+    })).nullable().describe('Reminder settings')
   }),
   async execute(params) {
     console.log('🔧 createCalendarEvent called with:', JSON.stringify(params, null, 2));
@@ -140,7 +140,7 @@ export const createCalendarEvent = tool({
       };
     }
   }
-};
+});
 
 /**
  * Quick add event using natural language
@@ -177,7 +177,7 @@ export const quickAddEvent = tool({
       };
     }
   }
-};
+});
 
 /**
  * List calendar events
@@ -186,9 +186,9 @@ export const listCalendarEvents = tool({
   name: 'listCalendarEvents',
   description: 'Query and list calendar events within a specified time range',
   parameters: z.object({
-    timeMin: z.string().optional().describe('Start of time range (natural language or ISO)'),
-    timeMax: z.string().optional().describe('End of time range (natural language or ISO)'),
-    searchQuery: z.string().optional().describe('Text to search for in events'),
+    timeMin: z.string().nullable().describe('Start of time range (natural language or ISO)'),
+    timeMax: z.string().nullable().describe('End of time range (natural language or ISO)'),
+    searchQuery: z.string().nullable().describe('Text to search for in events'),
     maxResults: z.number().default(10).describe('Maximum number of results to return')
   }),
   async execute(params) {
@@ -263,7 +263,7 @@ export const listCalendarEvents = tool({
       };
     }
   }
-};
+});
 
 /**
  * Update an existing calendar event
@@ -272,14 +272,14 @@ export const updateCalendarEvent = tool({
   name: 'updateCalendarEvent',
   description: 'Update an existing calendar event by ID or by searching for it',
   parameters: z.object({
-    eventId: z.string().optional().describe('The ID of the event to update'),
-    searchQuery: z.string().optional().describe('Search for event by title if ID not provided'),
+    eventId: z.string().nullable().describe('The ID of the event to update'),
+    searchQuery: z.string().nullable().describe('Search for event by title if ID not provided'),
     updates: z.object({
-      summary: z.string().optional().describe('New event title'),
-      startDateTime: z.string().optional().describe('New start time'),
-      endDateTime: z.string().optional().describe('New end time'),
-      location: z.string().optional().describe('New location'),
-      description: z.string().optional().describe('New description')
+      summary: z.string().nullable().describe('New event title'),
+      startDateTime: z.string().nullable().describe('New start time'),
+      endDateTime: z.string().nullable().describe('New end time'),
+      location: z.string().nullable().describe('New location'),
+      description: z.string().nullable().describe('New description')
     }).describe('Fields to update')
   }),
   async execute(params) {
@@ -361,7 +361,7 @@ export const updateCalendarEvent = tool({
       };
     }
   }
-};
+});
 
 /**
  * Delete a calendar event
@@ -370,8 +370,8 @@ export const deleteCalendarEvent = tool({
   name: 'deleteCalendarEvent',
   description: 'Delete a calendar event by ID or by searching for it',
   parameters: z.object({
-    eventId: z.string().optional().describe('The ID of the event to delete'),
-    searchQuery: z.string().optional().describe('Search for event by title if ID not provided'),
+    eventId: z.string().nullable().describe('The ID of the event to delete'),
+    searchQuery: z.string().nullable().describe('Search for event by title if ID not provided'),
     sendNotifications: z.boolean().default(true).describe('Whether to notify attendees')
   }),
   async execute(params) {
@@ -427,7 +427,7 @@ export const deleteCalendarEvent = tool({
       };
     }
   }
-};
+});
 
 /**
  * Check free/busy times and detect conflicts

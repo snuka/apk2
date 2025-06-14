@@ -112,7 +112,7 @@ export const createCalendarEvent = tool({
 
       return {
         success: true,
-        message: `I've created "${params.summary}" on ${formatDateForVoice(startDate)}`,
+        message: `I've created "${params.summary}" on ${formatDateForVoice(startDate, true, 'America/Los_Angeles')}`,
         eventId: event.id,
         link: event.htmlLink
       };
@@ -214,7 +214,7 @@ export const listCalendarEvents = tool({
       // Format events for voice response
       const formattedEvents = events.map(event => ({
         summary: event.summary,
-        start: formatDateForVoice(new Date(event.start.dateTime || event.start.date)),
+        start: formatDateForVoice(new Date(event.start.dateTime || event.start.date), true, 'America/Los_Angeles'),
         location: event.location,
         attendees: event.attendees?.map(a => a.email).join(', ')
       }));
@@ -440,7 +440,7 @@ export const checkFreeBusy = tool({
       if (busyTimes.length === 0) {
         return {
           success: true,
-          message: `You're completely free between ${formatDateForVoice(minDate)} and ${formatDateForVoice(maxDate)}`,
+          message: `You're completely free between ${formatDateForVoice(minDate, true, 'America/Los_Angeles')} and ${formatDateForVoice(maxDate, true, 'America/Los_Angeles')}`,
           freeTimes: [{
             start: minDate,
             end: maxDate
@@ -450,7 +450,7 @@ export const checkFreeBusy = tool({
 
       // Format busy times for voice response
       const busyDescriptions = busyTimes.map(busy => 
-        `busy from ${formatDateForVoice(new Date(busy.start))} to ${formatDateForVoice(new Date(busy.end))}`
+        `busy from ${formatDateForVoice(new Date(busy.start), true, 'America/Los_Angeles')} to ${formatDateForVoice(new Date(busy.end), true, 'America/Los_Angeles')}`
       ).join(', ');
 
       return {
@@ -508,7 +508,7 @@ export const checkSchedulingConflict = tool({
       
       if (hasConflict) {
         const conflictDescriptions = busyTimes.map(busy => 
-          `conflict from ${formatDateForVoice(new Date(busy.start))} to ${formatDateForVoice(new Date(busy.end))}`
+          `conflict from ${formatDateForVoice(new Date(busy.start), true, 'America/Los_Angeles')} to ${formatDateForVoice(new Date(busy.end), true, 'America/Los_Angeles')}`
         ).join(', ');
 
         return {
@@ -522,7 +522,7 @@ export const checkSchedulingConflict = tool({
         return {
           success: true,
           hasConflict: false,
-          message: `The time slot from ${formatDateForVoice(startDate)} to ${formatDateForVoice(endDate)} is available`,
+          message: `The time slot from ${formatDateForVoice(startDate, true, 'America/Los_Angeles')} to ${formatDateForVoice(endDate, true, 'America/Los_Angeles')} is available`,
           isAvailable: true,
           conflicts: []
         };

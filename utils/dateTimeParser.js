@@ -96,14 +96,16 @@ export function parseRecurrence(text) {
  * Format date for display in voice responses
  * @param {Date} date - Date to format
  * @param {boolean} includeTime - Whether to include time
+ * @param {string} timezone - Timezone to use for formatting (default: America/Los_Angeles)
  * @returns {string} Formatted date string
  */
-export function formatDateForVoice(date, includeTime = true) {
+export function formatDateForVoice(date, includeTime = true, timezone = 'America/Los_Angeles') {
   const options = {
     weekday: 'long',
     year: 'numeric',
     month: 'long',
-    day: 'numeric'
+    day: 'numeric',
+    timeZone: timezone
   };
 
   if (includeTime) {

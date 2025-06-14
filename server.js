@@ -445,7 +445,46 @@ fastify.register(async function (fastify) {
         // Create RealtimeAgent with dynamic prompt, voice, and calendar tools
         const agent = new RealtimeAgent({
           name: 'AlwaysPickup Assistant',
-          instructions: instruction + '\n\nYou have access to Google Calendar and can help users manage their events. You can create, update, delete, and query calendar events using voice commands. When checking availability, always use the conflict checking tools to determine if there are scheduling conflicts.',
+          instructions: instruction + `
+
+You have access to Google Calendar and can help users manage their events. You can create, update, delete, and query calendar events using voice commands.
+
+CRITICAL INSTRUCTIONS FOR CALENDAR OPERATIONS:
+
+1. TIME AND DATE HANDLING:
+   - You MUST convert ALL natural language dates/times to ISO 8601 format before calling any tools
+   - Always use Pacific timezone (PST/PDT) unless the user specifies otherwise
+   - Current Pacific time offset: PDT is UTC-7 (March-November), PST is UTC-8 (November-March)
+   
+2. NATURAL LANGUAGE CONVERSIONS YOU MUST HANDLE:
+   - "today" → Calculate the current date in Pacific time, use start of day (00:00:00) and end of day (23:59:59)
+   - "tomorrow" → Add 1 day to current Pacific date
+   - "next Tuesday" → Find the next Tuesday from current Pacific date
+   - "4pm" → Today at 16:00:00 Pacific time
+   - "tomorrow at 3pm" → Tomorrow at 15:00:00 Pacific time
+   - "next week" → 7 days from current time
+   
+3. WHEN CALLING listCalendarEvents:
+   - For "what's my schedule today": 
+     - timeMin: "2025-06-14T00:00:00-07:00" (start of today Pacific)
+     - timeMax: "2025-06-14T23:59:59-07:00" (end of today Pacific)
+   - For "what's my schedule tomorrow":
+     - timeMin: "2025-06-15T00:00:00-07:00" (start of tomorrow Pacific)
+     - timeMax: "2025-06-15T23:59:59-07:00" (end of tomorrow Pacific)
+   
+4. EXAMPLE CONVERSIONS:
+   - User: "Schedule a meeting tomorrow at 2pm"
+     - You calculate: Tomorrow is June 15, 2025, so pass startDateTime: "2025-06-15T14:00:00-07:00"
+   - User: "Am I free today between 4 and 6pm?"
+     - You calculate: Today is June 14, 2025, so pass:
+       - timeMin: "2025-06-14T16:00:00-07:00"
+       - timeMax: "2025-06-14T18:00:00-07:00"
+
+5. CONFLICT CHECKING:
+   - Always use checkSchedulingConflict before creating events to verify availability
+   - If conflicts exist, inform the user and suggest alternative times
+
+Remember: The tools expect ISO 8601 format dates ONLY. You must do all natural language processing yourself.`,
           voice: voice,
           tools: [
             createCalendarEvent,

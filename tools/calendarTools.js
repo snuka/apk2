@@ -52,13 +52,13 @@ export const createCalendarEvent = tool({
   description: 'Create a new event in the user\'s Google Calendar with specified details',
   parameters: z.object({
     summary: z.string().describe('The title or summary of the event'),
-    startDateTime: z.string().describe('Start date/time (natural language or ISO format)'),
-    endDateTime: z.string().nullable().describe('End date/time (optional, defaults to 1 hour after start)'),
+    startDateTime: z.string().describe('Start date/time in ISO 8601 format (e.g., "2025-06-14T15:00:00-07:00")'),
+    endDateTime: z.string().nullable().describe('End date/time in ISO 8601 format. If null, defaults to 1 hour after start'),
     allDay: z.boolean().nullable().describe('Whether this is an all-day event'),
     description: z.string().nullable().describe('Event description or notes'),
     location: z.string().nullable().describe('Physical or virtual location'),
     attendees: z.string().nullable().describe('Comma-separated list of email addresses'),
-    recurrence: z.string().nullable().describe('Recurrence pattern (e.g., "every weekday", "weekly")'),
+    recurrence: z.string().nullable().describe('RRULE format for recurring events (e.g., "RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR")'),
     reminders: z.array(z.object({
       method: z.enum(['popup', 'email']),
       minutes: z.number()
@@ -75,29 +75,16 @@ export const createCalendarEvent = tool({
         };
       }
 
-      // Parse start date/time
-      const startParsed = parseDateTime(params.startDateTime);
-      if (!startParsed) {
-        return {
-          error: `I couldn't understand the date "${params.startDateTime}". Please try again with a clearer date format.`
-        };
-      }
+      // Parse ISO dates
+      const startDate = new Date(params.startDateTime);
+      const endDate = params.endDateTime ? 
+        new Date(params.endDateTime) : 
+        new Date(startDate.getTime() + 60 * 60 * 1000); // Default 1 hour
 
-      // Parse end date/time or calculate based on duration
-      let endDate;
-      if (params.endDateTime) {
-        const endParsed = parseDateTime(params.endDateTime);
-        endDate = endParsed ? endParsed.start : new Date(startParsed.start.getTime() + 60 * 60 * 1000);
-      } else {
-        // Default to 1 hour duration
-        endDate = new Date(startParsed.start.getTime() + 60 * 60 * 1000);
-      }
-
-      // Prepare event data
       const eventData = {
         summary: params.summary,
-        start: toGoogleCalendarDate(startParsed.start, params.allDay || startParsed.allDay),
-        end: toGoogleCalendarDate(endDate, params.allDay || startParsed.allDay),
+        start: toGoogleCalendarDate(startDate, params.allDay, 'America/Los_Angeles'),
+        end: toGoogleCalendarDate(endDate, params.allDay, 'America/Los_Angeles'),
         description: params.description,
         location: params.location
       };
@@ -107,12 +94,9 @@ export const createCalendarEvent = tool({
         eventData.attendees = extractEmails(params.attendees);
       }
 
-      // Add recurrence if provided
+      // Add recurrence if provided (expecting RRULE format)
       if (params.recurrence) {
-        const recurrenceRules = parseRecurrence(params.recurrence);
-        if (recurrenceRules.length > 0) {
-          eventData.recurrence = recurrenceRules;
-        }
+        eventData.recurrence = [params.recurrence];
       }
 
       // Add reminders if provided
@@ -128,7 +112,7 @@ export const createCalendarEvent = tool({
 
       return {
         success: true,
-        message: `I've created "${params.summary}" on ${formatDateForVoice(startParsed.start)}`,
+        message: `I've created "${params.summary}" on ${formatDateForVoice(startDate)}`,
         eventId: event.id,
         link: event.htmlLink
       };
@@ -186,8 +170,8 @@ export const listCalendarEvents = tool({
   name: 'listCalendarEvents',
   description: 'Query and list calendar events within a specified time range',
   parameters: z.object({
-    timeMin: z.string().nullable().describe('Start of time range (natural language or ISO)'),
-    timeMax: z.string().nullable().describe('End of time range (natural language or ISO)'),
+    timeMin: z.string().nullable().describe('Start of time range in ISO 8601 format. If null, defaults to current time'),
+    timeMax: z.string().nullable().describe('End of time range in ISO 8601 format. If null, defaults to 7 days from timeMin'),
     searchQuery: z.string().nullable().describe('Text to search for in events'),
     maxResults: z.number().default(10).describe('Maximum number of results to return')
   }),
@@ -201,20 +185,16 @@ export const listCalendarEvents = tool({
         };
       }
 
-      // Parse time range
-      let timeMin = new Date();
-      let timeMax = new Date();
-      timeMax.setDate(timeMax.getDate() + 7); // Default to next 7 days
+      // Parse ISO dates - the AI should handle all natural language conversion
+      let timeMin = params.timeMin ? new Date(params.timeMin) : new Date();
+      let timeMax = params.timeMax ? new Date(params.timeMax) : new Date(timeMin.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-      if (params.timeMin) {
-        const parsed = parseDateTime(params.timeMin);
-        if (parsed) timeMin = parsed.start;
-      }
-
-      if (params.timeMax) {
-        const parsed = parseDateTime(params.timeMax);
-        if (parsed) timeMax = parsed.start;
-      }
+      console.log('🕐 listCalendarEvents time range:', {
+        timeMin: timeMin.toISOString(),
+        timeMax: timeMax.toISOString(),
+        timeMinLocal: timeMin.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }),
+        timeMaxLocal: timeMax.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' })
+      });
 
       const events = await calendarService.listEvents({
         timeMin: timeMin.toISOString(),
@@ -276,8 +256,8 @@ export const updateCalendarEvent = tool({
     searchQuery: z.string().nullable().describe('Search for event by title if ID not provided'),
     updates: z.object({
       summary: z.string().nullable().describe('New event title'),
-      startDateTime: z.string().nullable().describe('New start time'),
-      endDateTime: z.string().nullable().describe('New end time'),
+      startDateTime: z.string().nullable().describe('New start time in ISO 8601 format'),
+      endDateTime: z.string().nullable().describe('New end time in ISO 8601 format'),
       location: z.string().nullable().describe('New location'),
       description: z.string().nullable().describe('New description')
     }).describe('Fields to update')
@@ -325,17 +305,13 @@ export const updateCalendarEvent = tool({
       }
       
       if (params.updates.startDateTime) {
-        const parsed = parseDateTime(params.updates.startDateTime);
-        if (parsed) {
-          updateData.start = toGoogleCalendarDate(parsed.start, parsed.allDay);
-        }
+        const startDate = new Date(params.updates.startDateTime);
+        updateData.start = toGoogleCalendarDate(startDate, false, 'America/Los_Angeles');
       }
       
       if (params.updates.endDateTime) {
-        const parsed = parseDateTime(params.updates.endDateTime);
-        if (parsed) {
-          updateData.end = toGoogleCalendarDate(parsed.start, parsed.allDay);
-        }
+        const endDate = new Date(params.updates.endDateTime);
+        updateData.end = toGoogleCalendarDate(endDate, false, 'America/Los_Angeles');
       }
       
       if (params.updates.location) {
@@ -436,8 +412,8 @@ export const checkFreeBusy = tool({
   name: 'checkFreeBusy',
   description: 'Check when the user is free or busy during a specified time range and detect scheduling conflicts',
   parameters: z.object({
-    timeMin: z.string().describe('Start of time range to check (natural language or ISO)'),
-    timeMax: z.string().describe('End of time range to check (natural language or ISO)')
+    timeMin: z.string().describe('Start of time range to check in ISO 8601 format'),
+    timeMax: z.string().describe('End of time range to check in ISO 8601 format')
   }),
   async execute(params) {
     console.log('🔧 checkFreeBusy called with:', JSON.stringify(params, null, 2));
@@ -449,19 +425,13 @@ export const checkFreeBusy = tool({
         };
       }
 
-      // Parse time range
-      const minParsed = parseDateTime(params.timeMin);
-      const maxParsed = parseDateTime(params.timeMax);
-
-      if (!minParsed || !maxParsed) {
-        return {
-          error: 'I couldn\'t understand the time range. Please provide clearer dates.'
-        };
-      }
+      // Parse ISO dates
+      const minDate = new Date(params.timeMin);
+      const maxDate = new Date(params.timeMax);
 
       const freeBusy = await calendarService.checkFreeBusy(
-        minParsed.start.toISOString(),
-        maxParsed.start.toISOString()
+        minDate.toISOString(),
+        maxDate.toISOString()
       );
 
       const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
@@ -470,10 +440,10 @@ export const checkFreeBusy = tool({
       if (busyTimes.length === 0) {
         return {
           success: true,
-          message: `You're completely free between ${formatDateForVoice(minParsed.start)} and ${formatDateForVoice(maxParsed.start)}`,
+          message: `You're completely free between ${formatDateForVoice(minDate)} and ${formatDateForVoice(maxDate)}`,
           freeTimes: [{
-            start: minParsed.start,
-            end: maxParsed.start
+            start: minDate,
+            end: maxDate
           }]
         };
       }
@@ -507,8 +477,8 @@ export const checkSchedulingConflict = tool({
   name: 'checkSchedulingConflict',
   description: 'Check if a specific time slot conflicts with existing calendar events',
   parameters: z.object({
-    startTime: z.string().describe('Start time of the proposed slot (natural language or ISO)'),
-    endTime: z.string().describe('End time of the proposed slot (natural language or ISO)')
+    startTime: z.string().describe('Start time of the proposed slot in ISO 8601 format'),
+    endTime: z.string().describe('End time of the proposed slot in ISO 8601 format')
   }),
   async execute(params) {
     console.log('🔧 checkSchedulingConflict called with:', JSON.stringify(params, null, 2));
@@ -521,20 +491,14 @@ export const checkSchedulingConflict = tool({
         };
       }
 
-      // Parse the proposed time slot
-      const startParsed = parseDateTime(params.startTime);
-      const endParsed = parseDateTime(params.endTime);
-
-      if (!startParsed || !endParsed) {
-        return {
-          error: 'I couldn\'t understand the time slot. Please provide clearer dates and times.'
-        };
-      }
+      // Parse ISO dates
+      const startDate = new Date(params.startTime);
+      const endDate = new Date(params.endTime);
 
       // Check for conflicts
       const freeBusy = await calendarService.checkFreeBusy(
-        startParsed.start.toISOString(),
-        endParsed.start.toISOString()
+        startDate.toISOString(),
+        endDate.toISOString()
       );
 
       const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
@@ -558,7 +522,7 @@ export const checkSchedulingConflict = tool({
         return {
           success: true,
           hasConflict: false,
-          message: `The time slot from ${formatDateForVoice(startParsed.start)} to ${formatDateForVoice(endParsed.start)} is available`,
+          message: `The time slot from ${formatDateForVoice(startDate)} to ${formatDateForVoice(endDate)} is available`,
           isAvailable: true,
           conflicts: []
         };

@@ -1,210 +1,50 @@
-import * as chrono from 'chrono-node';
-import { addHours, startOfDay, endOfDay, startOfWeek, endOfWeek, addDays } from 'date-fns';
+import { parseISO, isValid } from 'date-fns';
 
 /**
- * Parse natural language date/time strings into JavaScript Date objects
- * @param {string} text - Natural language date/time string
- * @param {Date} referenceDate - Reference date for relative dates (defaults to now)
- * @returns {Object} Parsed date information
+ * Parse date/time strings that are already in a structured format
+ * @param {string} text - ISO 8601 date string or standard date format
+ * @param {Date} referenceDate - Reference date for context (optional)
+ * @returns {Object|null} Parsed date information or null if invalid
  */
 export function parseDateTime(text, referenceDate = new Date()) {
   console.log('🕐 Parsing date/time:', text);
   
-  // First try timezone-specific patterns
-  const timezoneResult = parseTimezonePatterns(text, referenceDate);
-  if (timezoneResult) {
-    console.log('🕐 Timezone pattern matched:', timezoneResult);
-    return timezoneResult;
-  }
-
-  // Use chrono-node for natural language parsing
-  const results = chrono.parse(text, referenceDate, { forwardDate: true });
-  
-  if (results.length === 0) {
-    // Try some custom patterns if chrono fails
-    return parseCustomPatterns(text, referenceDate);
-  }
-
-  const result = results[0];
-  const start = result.start.date();
-  const end = result.end ? result.end.date() : null;
-
-  // If no end time specified, default to 1 hour duration for events
-  const endTime = end || addHours(start, 1);
-
-  const parsed = {
-    start: start,
-    end: endTime,
-    allDay: !result.start.isCertain('hour'),
-    text: result.text,
-    index: result.index
-  };
-
-  console.log('🕐 Chrono parsed result:', parsed);
-  return parsed;
-}
-
-/**
- * Parse timezone-specific patterns
- */
-function parseTimezonePatterns(text, referenceDate) {
-  const lowerText = text.toLowerCase();
-  
-  // PST/PDT specific patterns
-  const pstPattern = /(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*(?:to|-)?\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?\s*pst|pdt/i;
-  const match = lowerText.match(pstPattern);
-  
-  if (match) {
-    console.log('🕐 PST pattern matched:', match);
+  try {
+    // Try parsing as ISO 8601
+    const date = parseISO(text);
     
-    // Handle "today" context
-    let baseDate = referenceDate;
-    if (lowerText.includes('today')) {
-      baseDate = new Date();
-    } else if (lowerText.includes('tomorrow')) {
-      baseDate = addDays(new Date(), 1);
-    }
-    
-    // Parse start time
-    const startTimeStr = match[1];
-    const endTimeStr = match[2];
-    
-    try {
-      // Create PST-specific date strings
-      const dateStr = baseDate.toDateString();
-      const startDateTime = chrono.parseDate(`${dateStr} ${startTimeStr} PST`);
-      
-      if (!startDateTime) {
-        console.log('🕐 Failed to parse PST start time');
-        return null;
-      }
-      
-      let endDateTime;
-      if (endTimeStr) {
-        endDateTime = chrono.parseDate(`${dateStr} ${endTimeStr} PST`);
-      } else {
-        // Default to 1 hour duration
-        endDateTime = addHours(startDateTime, 1);
-      }
-      
-      const result = {
-        start: startDateTime,
-        end: endDateTime,
+    if (isValid(date)) {
+      return {
+        start: date,
+        end: date,
         allDay: false,
         text: text,
         index: 0,
-        timezone: 'PST'
+        timezone: 'America/Los_Angeles'
       };
-      
-      console.log('🕐 PST pattern result:', result);
-      return result;
-      
-    } catch (error) {
-      console.log('🕐 Error parsing PST time:', error);
-      return null;
-    }
-  }
-  
-  // Time range patterns like "6-8pm", "6pm-8pm", "6 to 8pm"
-  const rangePattern = /(\d{1,2}(?::\d{2})?)\s*(?:am|pm)?\s*(?:to|-)\s*(\d{1,2}(?::\d{2})?)\s*(am|pm)/i;
-  const rangeMatch = text.match(rangePattern);
-  
-  if (rangeMatch) {
-    console.log('🕐 Time range pattern matched:', rangeMatch);
-    
-    let baseDate = referenceDate;
-    if (lowerText.includes('today')) {
-      baseDate = new Date();
-    } else if (lowerText.includes('tomorrow')) {
-      baseDate = addDays(new Date(), 1);
     }
     
-    const startTime = rangeMatch[1];
-    const endTime = rangeMatch[2];
-    const period = rangeMatch[3];
+    // Try parsing as standard JavaScript date
+    const standardDate = new Date(text);
     
-    try {
-      const dateStr = baseDate.toDateString();
-      
-      // Handle cases like "6-8pm" where first time inherits the period
-      const startTimeWithPeriod = startTime.includes('am') || startTime.includes('pm') ? 
-        startTime : `${startTime}${period}`;
-      const endTimeWithPeriod = endTime.includes('am') || endTime.includes('pm') ? 
-        endTime : `${endTime}${period}`;
-      
-      const startDateTime = chrono.parseDate(`${dateStr} ${startTimeWithPeriod}`);
-      const endDateTime = chrono.parseDate(`${dateStr} ${endTimeWithPeriod}`);
-      
-      if (startDateTime && endDateTime) {
-        const result = {
-          start: startDateTime,
-          end: endDateTime,
-          allDay: false,
-          text: text,
-          index: 0
-        };
-        
-        console.log('🕐 Time range result:', result);
-        return result;
-      }
-    } catch (error) {
-      console.log('🕐 Error parsing time range:', error);
+    if (isValid(standardDate)) {
+      return {
+        start: standardDate,
+        end: standardDate,
+        allDay: false,
+        text: text,
+        index: 0,
+        timezone: 'America/Los_Angeles'
+      };
     }
-  }
-  
-  return null;
-}
-
-/**
- * Parse custom patterns that chrono might miss
- */
-function parseCustomPatterns(text, referenceDate) {
-  const lowerText = text.toLowerCase();
-  const now = referenceDate || new Date();
-
-  // All day patterns
-  if (lowerText.includes('all day')) {
-    let date = now;
     
-    if (lowerText.includes('tomorrow')) {
-      date = addDays(now, 1);
-    } else if (lowerText.includes('today')) {
-      date = now;
-    }
-
-    return {
-      start: startOfDay(date),
-      end: endOfDay(date),
-      allDay: true,
-      text: text,
-      index: 0
-    };
+    console.log('🕐 Could not parse date:', text);
+    return null;
+    
+  } catch (error) {
+    console.log('🕐 Error parsing date:', error);
+    return null;
   }
-
-  // This week/next week patterns
-  if (lowerText.includes('this week')) {
-    return {
-      start: startOfWeek(now, { weekStartsOn: 1 }), // Monday
-      end: endOfWeek(now, { weekStartsOn: 1 }),
-      allDay: false,
-      text: text,
-      index: 0
-    };
-  }
-
-  if (lowerText.includes('next week')) {
-    const nextWeek = addDays(now, 7);
-    return {
-      start: startOfWeek(nextWeek, { weekStartsOn: 1 }),
-      end: endOfWeek(nextWeek, { weekStartsOn: 1 }),
-      allDay: false,
-      text: text,
-      index: 0
-    };
-  }
-
-  // If no patterns match, return null
-  return null;
 }
 
 /**
@@ -279,17 +119,21 @@ export function formatDateForVoice(date, includeTime = true) {
  * Convert date to Google Calendar format
  * @param {Date} date - Date to convert
  * @param {boolean} allDay - Whether this is an all-day event
+ * @param {string} timezone - Optional timezone override (e.g., 'America/Los_Angeles' for PST)
  * @returns {Object} Google Calendar date object
  */
-export function toGoogleCalendarDate(date, allDay = false) {
+export function toGoogleCalendarDate(date, allDay = false, timezone = null) {
   if (allDay) {
     return {
       date: date.toISOString().split('T')[0]
     };
   } else {
+    // If timezone is provided, use it; otherwise use the date's timezone or system timezone
+    const timeZone = timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    
     return {
       dateTime: date.toISOString(),
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+      timeZone: timeZone
     };
   }
 }

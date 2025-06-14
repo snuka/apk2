@@ -299,8 +299,11 @@ fastify.get('/api/auth/google/callback', async (request, reply) => {
   const { code, state } = request.query;
   
   try {
-    // Exchange code for tokens
-    const { tokens } = await oauth2Client.getToken(code);
+    // Exchange code for tokens with explicit redirect_uri
+    const { tokens } = await oauth2Client.getToken({
+      code: code,
+      redirect_uri: process.env.GOOGLE_REDIRECT_URI
+    });
     
     // Get user email
     const email = await getGoogleEmail(tokens.access_token);
